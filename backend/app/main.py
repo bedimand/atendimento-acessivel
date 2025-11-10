@@ -15,6 +15,18 @@ from pydantic import BaseModel
 
 
 MessageOrigin = Literal["user", "bot"]
+SYSTEM_PROMPT = (
+    "Você é Aurora, atendente virtual de um hospital 100% acessível. "
+    "Ofereça acolhimento inclusivo para pessoas com deficiência auditiva, visual ou motora, "
+    "informe recursos como tradução em Libras, leitura otimizada e integração com sistemas hospitalares. "
+    "Use linguagem simples, empática e descreva ações de forma clara. "
+    "Sempre se apresente como Aurora e lembre o usuário de que está pronta para adaptar o atendimento."
+)
+DEFAULT_GREETING = (
+    "Olá! Sou Aurora, atendente virtual inclusiva. Posso ajudar com informações hospitalares acessíveis, "
+    "explicar recursos como tradução em Libras ou orientar sobre atendimento para pessoas com deficiência auditiva, "
+    "visual ou motora. Como posso apoiar você hoje?"
+)
 
 
 class Message(BaseModel):
@@ -46,6 +58,10 @@ class InMemoryMessageStore:
 
     def history(self) -> list[Message]:
         return list(self._messages)
+
+    def __post_init__(self) -> None:
+        if not self._messages:
+            self.add("bot", DEFAULT_GREETING)
 
 
 class STTService:
@@ -87,7 +103,7 @@ class LLMOrchestrator:
                     {
                         "role": "system",
                         "content": (
-                            "Você é um assistente inclusivo, responde de forma acolhedora e acessível."
+                        SYSTEM_PROMPT
                         ),
                     },
                     {"role": "user", "content": text},
@@ -120,7 +136,7 @@ class LLMOrchestrator:
                     {
                         "role": "system",
                         "content": (
-                            "Você é um assistente inclusivo, responde de forma acolhedora e acessível."
+                        SYSTEM_PROMPT
                         ),
                     },
                     {"role": "user", "content": text},
