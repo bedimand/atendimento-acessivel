@@ -7,6 +7,7 @@ export function useAudioRecorder() {
   const chunksRef = useRef<Blob[]>([]);
   const [status, setStatus] = useState<RecorderStatus>("idle");
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const startRecording = useCallback(async () => {
@@ -28,6 +29,7 @@ export function useAudioRecorder() {
 
       recorder.onstop = () => {
         const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+        setAudioBlob(blob);
         setAudioUrl(URL.createObjectURL(blob));
       };
 
@@ -55,6 +57,7 @@ export function useAudioRecorder() {
       URL.revokeObjectURL(audioUrl);
     }
     setAudioUrl(null);
+    setAudioBlob(null);
     setError(null);
     setStatus("idle");
   }, [audioUrl]);
@@ -62,6 +65,7 @@ export function useAudioRecorder() {
   return {
     status,
     audioUrl,
+    audioBlob,
     error,
     startRecording,
     stopRecording,

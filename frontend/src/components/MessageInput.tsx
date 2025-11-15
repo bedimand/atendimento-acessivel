@@ -4,14 +4,22 @@ type Props = {
   onSubmit: (content: string) => Promise<void> | void;
   disabled?: boolean;
   lastAudioUrl?: string | null;
+  transcribing?: boolean;
 };
 
-export function MessageInput({ onSubmit, disabled, lastAudioUrl }: Props) {
+export function MessageInput({
+  onSubmit,
+  disabled,
+  lastAudioUrl,
+  transcribing = false,
+}: Props) {
   const [value, setValue] = useState("");
+  const characterLimit = 500;
 
   const submitMessage = async () => {
-    if (!value.trim()) return;
-    await onSubmit(value.trim());
+    const sanitized = value.trim();
+    if (!sanitized) return;
+    await onSubmit(sanitized);
     setValue("");
   };
 
@@ -36,19 +44,31 @@ export function MessageInput({ onSubmit, disabled, lastAudioUrl }: Props) {
         <textarea
           id="chat-input"
           value={value}
-          onChange={(event) => setValue(event.target.value)}
+          onChange={(event) => setValue(event.target.value.slice(0, characterLimit))}
           placeholder="Digite uma mensagem acessível..."
-          disabled={disabled}
+          disabled={disabled || transcribing}
           rows={1}
           onKeyDown={handleKeyDown}
         />
-        <button type="submit" className="icon-button send" disabled={disabled || !value.trim()}>
+        <button
+          type="submit"
+          className="icon-button send"
+          disabled={disabled || transcribing || !value.trim()}
+          aria-label="Enviar mensagem"
+        >
           ➤
         </button>
       </div>
-      {lastAudioUrl && (
-        <p className="audio-hint">Áudio gravado pronto para upload futuro.</p>
-      )}
+      <div className="input-hints">
+        {transcribing ? (
+          <span className="status-pill recording">Transcrevendo áudio...</span>
+        ) : lastAudioUrl ? (
+          <span className="status-pill ready">Áudio pronto para transcrição</span>
+        ) : null}
+        <span className="micro-copy">
+          {value.length}/{characterLimit}
+        </span>
+      </div>
     </form>
   );
 }
