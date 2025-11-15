@@ -710,9 +710,18 @@ stt_service = _build_stt_service()
 
 app = FastAPI(title="Chatbot Inclusivo API", version="0.1.0")
 
+allowed_origins_env = os.getenv("ALLOW_ORIGINS")
+if allowed_origins_env:
+    origins = [origin.strip() for origin in allowed_origins_env.split(",") if origin.strip()]
+else:
+    origins = [
+        "http://localhost:5173",
+        "http://localhost:4173",
+    ]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=origins or ["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
