@@ -658,6 +658,7 @@ body {
   place-items: center;
   padding: 1.5rem;
   z-index: 100;
+  overflow-y: auto;
 }
 
 .profile-setup-panel {
@@ -669,6 +670,8 @@ body {
   display: grid;
   grid-template-columns: minmax(260px, 320px) 1fr;
   overflow: hidden;
+  max-height: 92vh;
+  min-height: 0;
 }
 
 .profile-setup-side {
@@ -702,6 +705,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .field-grid {
@@ -987,6 +992,7 @@ body {
 
   .profile-setup-panel {
     grid-template-columns: 1fr;
+    max-height: 94vh;
   }
 }
 
@@ -1017,5 +1023,13 @@ body {
 
   .profile-form {
     padding: 1.5rem;
+  }
+
+  .profile-setup-overlay {
+    padding: 1rem;
+  }
+
+  .profile-setup-side {
+    padding: 1.25rem;
   }
 }
