@@ -188,6 +188,18 @@ function App() {
     return availabilitySlots.find((slot) => slot.capacity_left > 0) ?? availabilitySlots[0];
   }, [availabilitySlots]);
 
+  useEffect(() => {
+    const shouldLockBody = (!profile || showProfileModal) || availabilityVisible || bookingsVisible;
+    if (shouldLockBody) {
+      document.body.classList.add("body-locked");
+    } else {
+      document.body.classList.remove("body-locked");
+    }
+    return () => {
+      document.body.classList.remove("body-locked");
+    };
+  }, [availabilityVisible, bookingsVisible, profile, showProfileModal]);
+
   const toggleAvailabilityPanel = () => {
     const next = !availabilityVisible;
     setAvailabilityVisible(next);

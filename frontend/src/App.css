@@ -24,6 +24,10 @@ body {
   color: inherit;
 }
 
+.body-locked {
+  overflow: hidden;
+}
+
 #root {
   min-height: 100vh;
 }
