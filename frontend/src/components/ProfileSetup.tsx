@@ -60,101 +60,118 @@ export function ProfileSetup({ initialProfile, onComplete, onCancel }: Props) {
 
   return (
     <div className="profile-setup-overlay" role="dialog" aria-modal="true">
-      <form className="profile-setup" onSubmit={handleSubmit}>
-        <header>
-          <div>
-            <h2>{isEditing ? "Atualizar perfil inclusivo" : "Vamos montar seu perfil"}</h2>
-            <p>Precisamos de algumas informações para personalizar o chat antes de falar com Aurora.</p>
-          </div>
+      <div className="profile-setup-panel">
+        <section className="profile-setup-side">
+          <p className="eyebrow">Perfil inclusivo</p>
+          <h2>{isEditing ? "Atualize suas preferências" : "Vamos montar seu perfil"}</h2>
+          <p>Personalizamos cada resposta com base nas suas necessidades de acessibilidade e no canal preferido.</p>
+          <ul className="profile-steps">
+            <li>
+              <strong>1.</strong> Identifique-se
+            </li>
+            <li>
+              <strong>2.</strong> Informe recursos prioritários
+            </li>
+            <li>
+              <strong>3.</strong> Compartilhe observações
+            </li>
+          </ul>
           {isEditing && onCancel && (
-            <button type="button" className="text-button" onClick={onCancel}>
-              Fechar
+            <button type="button" className="pill-button secondary" onClick={onCancel}>
+              Fechar sem alterar
             </button>
           )}
-        </header>
+        </section>
 
-        <label>
-          Nome completo*
-          <input value={fullName} onChange={(event) => setFullName(event.target.value)} placeholder="Ex.: Ana Clara" />
-        </label>
-
-        <label>
-          Identificador do paciente (SUS, prontuário, etc.)
-          <input value={patientId} onChange={(event) => setPatientId(event.target.value)} placeholder="Opcional" />
-        </label>
-
-        <label>
-          Pronomes preferidos
-          <select value={pronouns} onChange={(event) => setPronouns(event.target.value)}>
-            <option value="">Selecione</option>
-            {PRONOUN_OPTIONS.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <fieldset>
-          <legend>Quais deficiências deseja informar?</legend>
-          <div className="chip-grid">
-            {DISABILITY_OPTIONS.map((option) => (
-              <label key={option} className={disabilities.includes(option) ? "chip active" : "chip"}>
-                <input
-                  type="checkbox"
-                  checked={disabilities.includes(option)}
-                  onChange={() => setDisabilities((prev) => toggleValue(prev, option))}
-                />
-                {option}
-              </label>
-            ))}
+        <form className="profile-form" onSubmit={handleSubmit}>
+          <div className="field-grid">
+            <label>
+              Nome completo*
+              <input value={fullName} onChange={(event) => setFullName(event.target.value)} placeholder="Ex.: Ana Clara" />
+            </label>
+            <label>
+              Identificador do paciente
+              <input value={patientId} onChange={(event) => setPatientId(event.target.value)} placeholder="SUS, prontuário..." />
+            </label>
           </div>
-        </fieldset>
 
-        <fieldset>
-          <legend>Escolha os recursos de acessibilidade necessários</legend>
-          <div className="chip-grid">
-            {ACCESSIBILITY_OPTIONS.map((option) => (
-              <label key={option.value} className={accessibilityNeeds.includes(option.value) ? "chip active" : "chip"}>
-                <input
-                  type="checkbox"
-                  checked={accessibilityNeeds.includes(option.value)}
-                  onChange={() => setAccessibilityNeeds((prev) => toggleValue(prev, option.value))}
-                />
-                {option.label}
-              </label>
-            ))}
+          <div className="field-grid">
+            <label>
+              Pronomes preferidos
+              <select value={pronouns} onChange={(event) => setPronouns(event.target.value)}>
+                <option value="">Selecione</option>
+                {PRONOUN_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Preferência de contato
+              <select value={contactPreference} onChange={(event) => setContactPreference(event.target.value)}>
+                <option value="">Selecione</option>
+                {CONTACT_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
-        </fieldset>
 
-        <label>
-          Preferência de contato
-          <select value={contactPreference} onChange={(event) => setContactPreference(event.target.value)}>
-            <option value="">Selecione</option>
-            {CONTACT_OPTIONS.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </select>
-        </label>
+          <fieldset>
+            <legend>Quais deficiências deseja informar?</legend>
+            <div className="chip-grid">
+              {DISABILITY_OPTIONS.map((option) => (
+                <label key={option} className={disabilities.includes(option) ? "chip active" : "chip"}>
+                  <input
+                    type="checkbox"
+                    checked={disabilities.includes(option)}
+                    onChange={() => setDisabilities((prev) => toggleValue(prev, option))}
+                  />
+                  {option}
+                </label>
+              ))}
+            </div>
+          </fieldset>
 
-        <label>
-          Observações de mobilidade ou apoio
-          <textarea value={mobilityNotes} onChange={(event) => setMobilityNotes(event.target.value)} rows={2} />
-        </label>
+          <fieldset>
+            <legend>Escolha os recursos de acessibilidade necessários</legend>
+            <div className="chip-grid">
+              {ACCESSIBILITY_OPTIONS.map((option) => (
+                <label key={option.value} className={accessibilityNeeds.includes(option.value) ? "chip active" : "chip"}>
+                  <input
+                    type="checkbox"
+                    checked={accessibilityNeeds.includes(option.value)}
+                    onChange={() => setAccessibilityNeeds((prev) => toggleValue(prev, option.value))}
+                  />
+                  {option.label}
+                </label>
+              ))}
+            </div>
+          </fieldset>
 
-        <label>
-          Mais informações que deseja compartilhar
-          <textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={2} />
-        </label>
+          <div className="field-grid">
+            <label>
+              Observações de mobilidade ou apoio
+              <textarea value={mobilityNotes} onChange={(event) => setMobilityNotes(event.target.value)} rows={3} />
+            </label>
+            <label>
+              Mais informações que deseja compartilhar
+              <textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={3} />
+            </label>
+          </div>
 
-        {error && <p className="error-text">{error}</p>}
+          {error && <p className="error-text">{error}</p>}
 
-        <button type="submit" className="pill-button primary">
-          {isEditing ? "Salvar alterações" : "Começar atendimento"}
-        </button>
-      </form>
+          <div className="profile-form-actions">
+            <button type="submit" className="pill-button primary">
+              {isEditing ? "Salvar alterações" : "Começar atendimento"}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
