@@ -11,6 +11,11 @@ export function useAudioRecorder() {
   const [error, setError] = useState<string | null>(null);
 
   const startRecording = useCallback(async () => {
+    if (!window.isSecureContext) {
+      setStatus("unsupported");
+      setError("Ative HTTPS para capturar áudio neste navegador.");
+      return;
+    }
     if (!navigator.mediaDevices?.getUserMedia) {
       setStatus("unsupported");
       setError("Captura de áudio não suportada neste navegador.");
