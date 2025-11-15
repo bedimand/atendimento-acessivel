@@ -673,7 +673,8 @@ body {
   box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
   display: grid;
   grid-template-columns: minmax(260px, 320px) 1fr;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   max-height: 92vh;
   min-height: 0;
 }
@@ -711,6 +712,7 @@ body {
   gap: 1.25rem;
   overflow-y: auto;
   min-height: 0;
+  flex: 1;
 }
 
 .field-grid {
