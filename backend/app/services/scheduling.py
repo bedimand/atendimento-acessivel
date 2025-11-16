@@ -78,7 +78,9 @@ MAX_ITER = 200
 RESTARTS = 10
 SEED = 42
 
-DB_PATH = os.getenv("SCHEDULING_DB_PATH", "scheduling.db")
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+DEFAULT_DB = os.path.join(ROOT_DIR, "scheduling.db")
+DB_PATH = os.getenv("SCHEDULING_DB_PATH", DEFAULT_DB)
 
 
 def get_conn():
@@ -830,6 +832,36 @@ def resources_status_tool(date_str: str, faixa: str) -> Dict[str, Any]:
     return {"date": date_str, "slot": faixa, "resources": resources_left(date_str, faixa)}
 
 
+def slot_insights(date_str: str) -> List[Dict[str, Any]]:
+    summary: List[Dict[str, Any]] = []
+    for faixa in faixas_horarios:
+        capacity = capacity_left_on(date_str, faixa)
+        recursos = resources_left(date_str, faixa)
+        doctors_info: List[Dict[str, Any]] = []
+        for medico in medicos:
+            if faixa not in medico["disp"]:
+                continue
+            available = doctor_free_on(medico["nome"], date_str, faixa)
+            doctors_info.append(
+                {
+                    "name": medico["nome"],
+                    "specialties": sorted(medico["esp"]),
+                    "online": medico["online"],
+                    "available": available,
+                }
+            )
+        summary.append(
+            {
+                "slot": faixa,
+                "period": faixa_periodo.get(faixa),
+                "capacity_left": capacity,
+                "resources_left": recursos,
+                "doctors": doctors_info,
+            }
+        )
+    return summary
+
+
 def triage_score_tool(payload: Dict[str, Any]) -> Dict[str, Any]:
     score = calc_triage_urg(payload)
     return {"triage_level": score}
@@ -845,6 +877,10 @@ def patient_requirements_tool(patient_id: int) -> Dict[str, Any]:
 
 def cancel_booking_tool(booking_id: int) -> Dict[str, Any]:
     return cancel_booking(booking_id)
+
+
+def slot_overview_tool(date_str: str) -> Dict[str, Any]:
+    return {"date": date_str, "slots": slot_insights(date_str)}
 
 
 def suggest_alternative_slot_tool(payload: Dict[str, Any]) -> Dict[str, Any]:

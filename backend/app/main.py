@@ -271,6 +271,10 @@ def _tool_availability_overview(**kwargs):
     return {"slots": scheduling.availability_snapshot(days)}
 
 
+def _tool_slot_overview(**kwargs):
+    return scheduling.slot_overview_tool(kwargs["date"])
+
+
 def _tool_cancel_booking(**kwargs):
     return scheduling.cancel_booking_tool(int(kwargs["booking_id"]))
 
@@ -279,6 +283,7 @@ TOOL_FUNCTIONS: dict[str, Any] = {
     "plan_appointment": _tool_plan_appointment,
     "book_appointment": _tool_book_appointment,
     "availability_overview": _tool_availability_overview,
+    "slot_overview": _tool_slot_overview,
     "triage_score": _tool_triage_score,
     "cancel_booking": _tool_cancel_booking,
 }
@@ -334,6 +339,20 @@ TOOL_DEFINITIONS = [
                 "properties": {
                     "days": {"type": "integer", "minimum": 1, "maximum": 30},
                 },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "slot_overview",
+            "description": "Exibe todos os horarios de um dia especifico com capacidade, recursos e medicos livres.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "date": {"type": "string", "description": "Data em formato ISO (YYYY-MM-DD)."},
+                },
+                "required": ["date"],
             },
         },
     },

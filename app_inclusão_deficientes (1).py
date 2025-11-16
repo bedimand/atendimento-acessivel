@@ -269,8 +269,7 @@ if pathlib.Path("/content").exists():
     default_db = pathlib.Path("/content/app.db")
 else:
     repo_root = pathlib.Path(__file__).resolve().parent
-    backend_db = repo_root / "backend" / "scheduling.db"
-    default_db = backend_db if backend_db.parent.exists() else repo_root / "scheduling.db"
+    default_db = repo_root / "scheduling.db"
 
 DB_PATH = os.getenv("SCHEDULING_DB_PATH") or str(default_db)
 
