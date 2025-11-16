@@ -106,17 +106,31 @@ export async function fetchAvailability(days = 7): Promise<AvailabilitySlot[]> {
 }
 
 export async function fetchBookings(filter?: { date?: string; slot?: string }): Promise<Booking[]> {
-  const response = await fetch(`${BASE_URL}/tools/bookings`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(filter ?? {}),
-  });
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(text || "Erro ao listar agendamentos.");
-  }
-  const payload = (await response.json()) as { bookings: Booking[] };
-  return payload.bookings ?? [];
+    const response = await fetch(`${BASE_URL}/tools/bookings`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify(filter ?? {}),
+    });
+    if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || "Erro ao listar agendamentos.");
+    }
+    const payload = (await response.json()) as { bookings: Booking[] };
+    return payload.bookings ?? [];
+}
+
+export async function cancelBooking(bookingId: number): Promise<void> {
+    const response = await fetch(`${BASE_URL}/tools/cancel-booking`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ booking_id: bookingId }),
+    });
+    if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || "Erro ao cancelar agendamento.");
+    }
 }

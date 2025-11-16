@@ -265,7 +265,14 @@ MAX_ITER = 1000
 RESTARTS = 5
 SEED = 42
 
-DB_PATH = "/content/app.db" if pathlib.Path("/content").exists() else "app.db"
+if pathlib.Path("/content").exists():
+    default_db = pathlib.Path("/content/app.db")
+else:
+    repo_root = pathlib.Path(__file__).resolve().parent
+    backend_db = repo_root / "backend" / "scheduling.db"
+    default_db = backend_db if backend_db.parent.exists() else repo_root / "scheduling.db"
+
+DB_PATH = os.getenv("SCHEDULING_DB_PATH") or str(default_db)
 
 def get_conn():
     return sqlite3.connect(DB_PATH, check_same_thread=False)
@@ -1047,4 +1054,3 @@ st.markdown(
     '<div aria-live="polite" id="status-aria" data-tts="1" aria-label="Aplicativo pronto. Use Tab para navegar.">Aplicativo pronto. Use Tab para navegar.</div>',
     unsafe_allow_html=True,
 )
-

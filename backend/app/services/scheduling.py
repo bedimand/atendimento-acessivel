@@ -4,6 +4,7 @@ import json
 import os
 import random
 import sqlite3
+from collections import defaultdict
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -19,6 +20,7 @@ especialidades = [
     "pediatria",
     "endocrinologia",
     "odontologia",
+    "clinico geral",
 ]
 
 acessibilidades = ["libras", "braille", "locomocao", "cognitiva"]
@@ -48,6 +50,8 @@ medicos = [
     {"nome": "Dra. Juliana", "esp": {"pediatria"}, "online": True, "disp": {"07-09", "09-11", "11-13", "13-15"}},
     {"nome": "Dr. Kevin", "esp": {"endocrinologia"}, "online": False, "disp": {"13-15", "15-17", "17-19"}},
     {"nome": "Dra. Laura", "esp": {"odontologia"}, "online": True, "disp": {"07-09", "09-11", "11-13", "15-17", "19-21"}},
+    {"nome": "Dr. Carlos Mendes", "esp": {"clinico geral"}, "online": False, "disp": {"09-11", "11-13", "13-15", "15-17"}},
+    {"nome": "Dra. Sofia Lima", "esp": {"clinico geral"}, "online": True, "disp": {"07-09", "09-11", "13-15", "17-19"}},
 ]
 
 recursos_qtd = {
@@ -68,6 +72,8 @@ PESO_ESP = 100
 PESO_ONLINE = 40
 PESO_PICO = 20
 PESO_OVER = 1_000
+PESO_DISP = 200
+PESO_URGENCIA = 50
 MAX_ITER = 200
 RESTARTS = 10
 SEED = 42
@@ -256,6 +262,34 @@ def bookings_on(date_str: str, faixa: str) -> List[Dict[str, Any]]:
     return list_bookings(date_str=date_str, faixa=faixa)
 
 
+def cancel_booking(booking_id: int) -> Dict[str, Any]:
+    with get_conn() as con:
+        cur = con.cursor()
+        cur.execute(
+            """
+        SELECT b.id, b.patient_id, b.data, b.faixa, b.doctor_name, p.esp
+          FROM bookings b
+          JOIN patients p ON p.id = b.patient_id
+         WHERE b.id = ?
+        """,
+            (booking_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return {"cancelled": False, "reason": "Agendamento nao encontrado."}
+        cur.execute("DELETE FROM bookings WHERE id = ?", (booking_id,))
+        con.commit()
+    return {
+        "cancelled": True,
+        "booking_id": row[0],
+        "patient_id": row[1],
+        "date": row[2],
+        "slot": row[3],
+        "doctor_name": row[4],
+        "specialty": row[5],
+    }
+
+
 def resources_left(date_str: str, faixa: str) -> Dict[str, int]:
     with get_conn() as con:
         cur = con.cursor()
@@ -331,6 +365,275 @@ def find_next_slot(
             if livres:
                 return dia, faixa, livres[0]["nome"]
     return None
+
+
+def _baseline_capacity_limits(target_date: Optional[str], slots: Sequence[str]) -> Dict[str, int]:
+    limits: Dict[str, int] = {}
+    for slot in slots:
+        remaining = capacidade.get(slot, 0)
+        if target_date:
+            try:
+                remaining = capacity_left_on(target_date, slot)
+            except Exception:
+                remaining = capacidade.get(slot, 0)
+        limits[slot] = max(0, remaining)
+    return limits
+
+
+def _baseline_resource_limits(target_date: Optional[str], slots: Sequence[str]) -> Dict[str, Dict[str, int]]:
+    limits: Dict[str, Dict[str, int]] = {}
+    for slot in slots:
+        base = recursos_qtd.get(slot, {})
+        snapshot = {name: base_val for name, base_val in base.items()}
+        if target_date:
+            try:
+                slot_left = resources_left(target_date, slot)
+            except Exception:
+                slot_left = {}
+            for name, base_val in base.items():
+                snapshot[name] = slot_left.get(name, base_val)
+        limits[slot] = snapshot
+    return limits
+
+
+def _rng_from_seed(seed: Optional[int]):
+    return random if seed is None else random.Random(seed)
+
+
+def _generate_hill_solution(
+    patients: Sequence[Dict[str, Any]],
+    slots: Sequence[str],
+    doctors: Sequence[Dict[str, Any]],
+    rng,
+) -> List[int]:
+    solution: List[int] = []
+    slots_list = list(slots)
+    for patient in patients:
+        period_slots = [slot for slot in slots_list if faixa_periodo.get(slot) == patient["periodo"]]
+        chosen_slot = rng.choice(period_slots or slots_list)
+        slot_idx = slots_list.index(chosen_slot)
+        doctor_indices = [
+            idx for idx, doc in enumerate(doctors) if patient["esp"] in doc["esp"] and chosen_slot in doc["disp"]
+        ]
+        if not doctor_indices:
+            doctor_indices = [idx for idx, doc in enumerate(doctors) if patient["esp"] in doc["esp"]]
+        if not doctor_indices:
+            doctor_indices = list(range(len(doctors)))
+        doctor_idx = rng.choice(doctor_indices)
+        solution.extend([slot_idx, doctor_idx])
+    return solution
+
+
+def _generate_hill_neighbor(
+    solution: Sequence[int],
+    patients: Sequence[Dict[str, Any]],
+    doctors: Sequence[Dict[str, Any]],
+    slots: Sequence[str],
+    rng,
+) -> List[int]:
+    if not solution:
+        return list(solution)
+    neighbor = list(solution)
+    index = rng.randrange(len(solution))
+    patient_idx = index // 2
+    slots_list = list(slots)
+    if index % 2 == 0:
+        period_slots = [slot for slot in slots_list if faixa_periodo.get(slot) == patients[patient_idx]["periodo"]]
+        new_slot = rng.choice(period_slots or slots_list)
+        neighbor[index] = slots_list.index(new_slot)
+        current_doctor_idx = neighbor[2 * patient_idx + 1]
+        doctor = doctors[current_doctor_idx]
+        if (patients[patient_idx]["esp"] not in doctor["esp"]) or (new_slot not in doctor["disp"]):
+            candidates = [
+                idx for idx, info in enumerate(doctors) if patients[patient_idx]["esp"] in info["esp"] and new_slot in info["disp"]
+            ]
+            if candidates:
+                neighbor[2 * patient_idx + 1] = rng.choice(candidates)
+    else:
+        current_slot = slots_list[neighbor[2 * patient_idx]]
+        candidates = [
+            idx for idx, info in enumerate(doctors)
+            if patients[patient_idx]["esp"] in info["esp"] and current_slot in info["disp"]
+        ]
+        if candidates:
+            neighbor[index] = rng.choice(candidates)
+    return neighbor
+
+
+def _calc_hill_cost(
+    solution: Sequence[int],
+    patients: Sequence[Dict[str, Any]],
+    doctors: Sequence[Dict[str, Any]],
+    slots: Sequence[str],
+    capacity_limits: Dict[str, int],
+    resource_limits: Dict[str, Dict[str, int]],
+) -> Tuple[float, Dict[int, Dict[str, str]], Dict[str, Dict[str, int]], Dict[str, int]]:
+    cost = 0.0
+    slot_usage: Dict[str, int] = defaultdict(int)
+    doctor_usage: Dict[Tuple[str, str], int] = defaultdict(int)
+    allocations: Dict[int, Dict[str, str]] = {}
+    resources_state: Dict[str, Dict[str, int]] = {
+        slot: {name: qty for name, qty in resource_limits.get(slot, {}).items()} for slot in slots
+    }
+    slots_list = list(slots)
+    for idx, patient in enumerate(patients):
+        slot_idx = solution[2 * idx]
+        doctor_idx = solution[2 * idx + 1]
+        slot = slots_list[slot_idx]
+        doctor = doctors[doctor_idx]
+        warnings: Dict[str, str] = {}
+        if patient["esp"] not in doctor["esp"]:
+            cost += PESO_ESP
+        if patient["tipo"] == "online" and not doctor["online"]:
+            cost += PESO_ONLINE
+        if slot not in doctor["disp"]:
+            cost += PESO_DISP
+            warnings["doctor_availability"] = "Medico indisponivel no horario sugerido."
+        slot_usage[slot] += 1
+        if slot_usage[slot] > capacity_limits.get(slot, capacidade.get(slot, 0)):
+            cost += PESO_OVER
+        slot_resources = resources_state.get(slot, {})
+        for req in patient.get("acc", []):
+            if slot_resources.get(req, 0) > 0:
+                slot_resources[req] -= 1
+                warnings[req] = "disponivel"
+            else:
+                cost += PESO_RECURSO
+                warnings[req] = "indisponivel"
+        if faixa_periodo.get(slot) != patient["periodo"]:
+            cost += PESO_PERIODO
+        doctor_usage[(doctor["nome"], slot)] += 1
+        if doctor_usage[(doctor["nome"], slot)] > 1:
+            cost += PESO_OVER
+            warnings["doctor_conflict"] = f"{doctor['nome']} ja possui atendimento no horario."
+        cost -= patient.get("urg", 1) * (PESO_URGENCIA / 5)
+        allocations[idx] = warnings
+    remaining_capacity: Dict[str, int] = {}
+    for slot in slots_list:
+        limit = capacity_limits.get(slot, capacidade.get(slot, 0))
+        remaining_capacity[slot] = max(0, limit - slot_usage.get(slot, 0))
+    return cost, allocations, resources_state, remaining_capacity
+
+
+def _hill_climb_once(
+    patients: Sequence[Dict[str, Any]],
+    doctors: Sequence[Dict[str, Any]],
+    slots: Sequence[str],
+    capacity_limits: Dict[str, int],
+    resource_limits: Dict[str, Dict[str, int]],
+    max_iter: int = MAX_ITER,
+    seed: Optional[int] = None,
+) -> Tuple[List[int], float, Dict[int, Dict[str, str]], Dict[str, Dict[str, int]], Dict[str, int]]:
+    if not patients:
+        return [], 0.0, {}, {slot: resource_limits.get(slot, {}).copy() for slot in slots}, capacity_limits.copy()
+    rng = _rng_from_seed(seed)
+    solution = _generate_hill_solution(patients, slots, doctors, rng)
+    best_cost, allocations, resources_state, remaining_capacity = _calc_hill_cost(
+        solution, patients, doctors, slots, capacity_limits, resource_limits
+    )
+    for _ in range(max(1, max_iter)):
+        neighbor = _generate_hill_neighbor(solution, patients, doctors, slots, rng)
+        neigh_cost, neigh_alloc, neigh_res, neigh_cap = _calc_hill_cost(
+            neighbor, patients, doctors, slots, capacity_limits, resource_limits
+        )
+        if neigh_cost < best_cost:
+            solution, best_cost, allocations, resources_state, remaining_capacity = (
+                neighbor,
+                neigh_cost,
+                neigh_alloc,
+                neigh_res,
+                neigh_cap,
+            )
+    return solution, best_cost, allocations, resources_state, remaining_capacity
+
+
+def _hill_climb_multi(
+    patients: Sequence[Dict[str, Any]],
+    doctors: Sequence[Dict[str, Any]],
+    slots: Sequence[str],
+    capacity_limits: Dict[str, int],
+    resource_limits: Dict[str, Dict[str, int]],
+    max_iter: int = MAX_ITER,
+    restarts: int = RESTARTS,
+    base_seed: Optional[int] = SEED,
+) -> Tuple[List[int], float, Dict[int, Dict[str, str]], Dict[str, Dict[str, int]], Dict[str, int]]:
+    best_solution: List[int] = []
+    best_cost = float("inf")
+    best_alloc: Dict[int, Dict[str, str]] = {}
+    best_resources: Dict[str, Dict[str, int]] = {slot: resource_limits.get(slot, {}).copy() for slot in slots}
+    best_capacity = capacity_limits.copy()
+    total_restarts = max(1, restarts)
+    for offset in range(total_restarts):
+        seed = None if base_seed is None else base_seed + offset
+        sol, cost, alloc, resources_state, cap_state = _hill_climb_once(
+            patients,
+            doctors,
+            slots,
+            capacity_limits,
+            resource_limits,
+            max_iter=max_iter,
+            seed=seed,
+        )
+        if cost < best_cost:
+            best_solution = sol
+            best_cost = cost
+            best_alloc = alloc
+            best_resources = {slot: vals.copy() for slot, vals in resources_state.items()}
+            best_capacity = cap_state.copy()
+    return best_solution, best_cost, best_alloc, best_resources, best_capacity
+
+
+def _prepare_hill_patients(
+    requests: Sequence[Dict[str, Any]],
+    requested_slots: Optional[Sequence[str]] = None,
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[str]]:
+    slots = list(dict.fromkeys([slot for slot in (requested_slots or faixas_horarios) if slot in faixas_horarios]))
+    if not slots:
+        slots = faixas_horarios[:]
+    normalized: List[Dict[str, Any]] = []
+    metadata: List[Dict[str, Any]] = []
+    for idx, req in enumerate(requests):
+        specialty_raw = (req.get("specialty") or "").strip().lower()
+        if not specialty_raw:
+            raise ValueError("Cada paciente precisa informar o campo 'specialty'.")
+        consultation_type = (req.get("consultation_type") or "presencial").strip().lower()
+        if consultation_type not in tipo_consulta:
+            consultation_type = "presencial"
+        pref_slot = req.get("preferred_slot")
+        if pref_slot and pref_slot not in slots:
+            pref_slot = slots[0]
+        period = (req.get("preferred_period") or (faixa_periodo.get(pref_slot) if pref_slot else None) or "manha").strip().lower()
+        if period not in {"manha", "tarde", "noite"}:
+            period = "manha"
+        urgency_raw = req.get("urgency", 1)
+        try:
+            urgency_val = int(urgency_raw)
+        except (TypeError, ValueError):
+            urgency_val = 1
+        urgency_val = max(1, min(5, urgency_val))
+        accessibility = []
+        for acc in req.get("accessibility") or []:
+            token = (acc or "").strip().lower()
+            if token in acessibilidades:
+                accessibility.append(token)
+        normalized.append(
+            {
+                "esp": specialty_raw,
+                "tipo": consultation_type,
+                "periodo": period,
+                "urg": urgency_val,
+                "acc": accessibility,
+            }
+        )
+        metadata.append(
+            {
+                "index": idx,
+                "patient_id": req.get("patient_id"),
+                "label": req.get("label") or req.get("name"),
+                "preferred_slot": pref_slot,
+            }
+        )
+    return normalized, metadata, slots
 
 
 def calc_triage_urg(tri: Dict[str, Any]) -> int:
@@ -540,6 +843,10 @@ def patient_requirements_tool(patient_id: int) -> Dict[str, Any]:
     return patient_access_map(patient_id)
 
 
+def cancel_booking_tool(booking_id: int) -> Dict[str, Any]:
+    return cancel_booking(booking_id)
+
+
 def suggest_alternative_slot_tool(payload: Dict[str, Any]) -> Dict[str, Any]:
     prefer_faixa = payload.get("preferred_slot") or faixas_horarios[0]
     result = list_available_slots_tool(
@@ -596,6 +903,77 @@ def plan_appointment_tool(payload: Dict[str, Any]) -> Dict[str, Any]:
         },
         "result": evaluation,
         "alternative": alternative,
+    }
+
+
+def optimize_schedule_tool(payload: Dict[str, Any]) -> Dict[str, Any]:
+    requests = payload.get("patients") or []
+    if not requests:
+        return {"optimized": False, "reason": "Nenhum paciente informado."}
+    try:
+        patients, metadata, slots = _prepare_hill_patients(requests, payload.get("slots"))
+    except ValueError as exc:
+        return {"optimized": False, "reason": str(exc)}
+    target_date = payload.get("date")
+    capacity_limits = _baseline_capacity_limits(target_date, slots)
+    resource_limits = _baseline_resource_limits(target_date, slots)
+    try:
+        max_iter = max(1, int(payload.get("max_iter") or MAX_ITER))
+    except (TypeError, ValueError):
+        max_iter = MAX_ITER
+    try:
+        restarts = max(1, int(payload.get("restarts") or RESTARTS))
+    except (TypeError, ValueError):
+        restarts = RESTARTS
+    seed_raw = payload.get("seed", SEED)
+    base_seed: Optional[int]
+    try:
+        base_seed = int(seed_raw) if seed_raw is not None else SEED
+    except (TypeError, ValueError):
+        base_seed = None if seed_raw in (None, "", False) else SEED
+    solution, cost, allocations, resources_state, capacity_state = _hill_climb_multi(
+        patients,
+        medicos,
+        slots,
+        capacity_limits,
+        resource_limits,
+        max_iter=max_iter,
+        restarts=restarts,
+        base_seed=base_seed,
+    )
+    assignments: List[Dict[str, Any]] = []
+    for idx, patient in enumerate(patients):
+        slot_idx = solution[2 * idx]
+        doctor_idx = solution[2 * idx + 1]
+        slot = slots[slot_idx]
+        doctor = medicos[doctor_idx]
+        entry: Dict[str, Any] = {
+            "patient_index": metadata[idx]["index"],
+            "patient_id": metadata[idx].get("patient_id"),
+            "specialty": patient["esp"],
+            "consultation_type": patient["tipo"],
+            "slot": slot,
+            "period": faixa_periodo.get(slot, patient["periodo"]),
+            "doctor_name": doctor["nome"],
+            "urgency": patient["urg"],
+            "warnings": allocations.get(idx, {}),
+        }
+        if metadata[idx].get("label"):
+            entry["label"] = metadata[idx]["label"]
+        assignments.append(entry)
+    return {
+        "optimized": True,
+        "cost": cost,
+        "assignments": assignments,
+        "capacity_left": capacity_state,
+        "resources_left": resources_state,
+        "parameters": {
+            "slots": slots,
+            "date": target_date,
+            "max_iter": max_iter,
+            "restarts": restarts,
+            "seed": base_seed,
+        },
     }
 
 

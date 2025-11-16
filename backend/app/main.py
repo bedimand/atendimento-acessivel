@@ -26,13 +26,59 @@ from .services import scheduling
 
 
 MessageOrigin = Literal["user", "bot"]
+
+import io
+import json
+import logging
+import os
+import random
+import time
+import uuid
+from dataclasses import dataclass, field
+from datetime import date, datetime, timezone
+from typing import Any, AsyncIterator, Literal, Optional
+
+import boto3
+import httpx
+from botocore.exceptions import BotoCoreError, ClientError
+from dotenv import load_dotenv
+from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
+from openai import AsyncOpenAI
+from pydantic import BaseModel, Field
+
+from .services import scheduling
+
+
+MessageOrigin = Literal["user", "bot"]
 SYSTEM_PROMPT = (
     "Voce e Aurora, atendente virtual de um hospital 100 por cento acessivel. "
-    "Use linguagem simples, empatica e descreva recursos inclusivos de forma clara. "
-    "Antes de prometer horarios, utilize as ferramentas disponiveis para verificar agenda, recursos de acessibilidade "
-    "e registrar consultas. Sempre começe usando a ferramenta plan_appointment para avaliar horarios; em seguida, use book_appointment apenas quando a pessoa confirmar. "
-    "Nao pergunte qual nivel de urgencia usar; defina voce mesma com base nos sintomas descritos (padrao 2 quando nao houver indicacao, aumente apenas quando a conversa trouxer sinais de maior gravidade)."
+    "Mantenha um tom natural, profissional e acolhedor. "
+    "Sempre consulte plan_appointment antes de prometer horarios; descreva a disponibilidade de forma simples e cite os medicos livres apenas quando fizer sentido. Se o usúario pedir um horario especifico, verifique com list_available_slots se ha vagas e apenas sugira outro horario se nao houver para o horario desejado. "
+    "Se o horário solicitado estiver disponivel, foque apenas nas necessidades do usúario e não sugira ou cite outras datas ou recursos. Se mantenha fiel ao que foi pedido. "
+    "Jamais afirme falta de disponibilidade se a consulta à ferramenta indicar vaga; utilize o horario proposto pelo sistema como verdade final. "
+    "Se nao houver vagas, explique com empatia e ofereca alternativas."
+    "Pergunte sobre preferencia de medico quando apropriado, citando quais estão disponíveis para o horário desejado, mas se a pessoa aceitar um horario (ex.: responder 'pode ser' ou 'combinado'), avance para o registro sem repetir a mesma pergunta. "
+    "Nunca pergunte o nível de urgência diretamente, voce deve inferir a partir do que foi relatado, (padrao 2 se nao houver sinais graves ou falta de informação). "
+    "Nunca mencione nomes tecnicos de campos/ferramentas; use apenas linguagem natural. "
+    "Quando o paciente confirmar, use book_appointment para registrar (uma vez). "
+    "A confirmação do agendamento deve ser única e final, após o usúario concordar com o horario sugerido, faça a reserva imediatamente."
+    "Na confirmacao final, cite data, horario, especialidade, tipo, recursos acessiveis e o nome do medico de forma amigavel. "
+    "Use negrito com **texto** apenas em pontos importantes. "
+    "Apos o agendamento, ofereca ajuda adicional ou encerre a conversa educadamente."
+
 )
+DEFAULT_GREETING = (
+    "Olá! Sou Aurora, atendente virtual inclusiva. Posso ajudar com informações hospitalares acessíveis, "
+    "explicar recursos como tradução em Libras ou orientar sobre atendimento para pessoas com deficiência auditiva, "
+    "visual ou motora. Como posso apoiar você hoje?"
+)
+
+
+class Message(BaseModel):
+    id: int
 DEFAULT_GREETING = (
     "Olá! Sou Aurora, atendente virtual inclusiva. Posso ajudar com informações hospitalares acessíveis, "
     "explicar recursos como tradução em Libras ou orientar sobre atendimento para pessoas com deficiência auditiva, "
@@ -134,6 +180,10 @@ class BookingFilterPayload(BaseModel):
     slot: Optional[str] = None
 
 
+class CancelBookingPayload(BaseModel):
+    booking_id: int
+
+
 class SuggestSlotPayload(BaseModel):
     specialty: str
     consultation_type: str = "presencial"
@@ -221,11 +271,16 @@ def _tool_availability_overview(**kwargs):
     return {"slots": scheduling.availability_snapshot(days)}
 
 
+def _tool_cancel_booking(**kwargs):
+    return scheduling.cancel_booking_tool(int(kwargs["booking_id"]))
+
+
 TOOL_FUNCTIONS: dict[str, Any] = {
     "plan_appointment": _tool_plan_appointment,
     "book_appointment": _tool_book_appointment,
     "availability_overview": _tool_availability_overview,
     "triage_score": _tool_triage_score,
+    "cancel_booking": _tool_cancel_booking,
 }
 
 TOOL_DEFINITIONS = [
@@ -288,6 +343,20 @@ TOOL_DEFINITIONS = [
             "name": "triage_score",
             "description": "Calcula o nivel de urgencia baseado em dados da triagem.",
             "parameters": {"type": "object", "properties": {}, "additionalProperties": True},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "cancel_booking",
+            "description": "Cancela um agendamento existente liberando os recursos associados.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "booking_id": {"type": "integer", "minimum": 1},
+                },
+                "required": ["booking_id"],
+            },
         },
     },
 ]
@@ -854,6 +923,14 @@ async def get_patient_requirements(patient_id: int):
     if not data:
         raise HTTPException(status_code=404, detail="Paciente nao encontrado.")
     return data
+
+
+@app.post("/tools/cancel-booking")
+async def cancel_booking_endpoint(payload: CancelBookingPayload):
+    result = scheduling.cancel_booking_tool(payload.booking_id)
+    if not result.get("cancelled"):
+        raise HTTPException(status_code=404, detail=result.get("reason", "Agendamento nao encontrado."))
+    return result
 
 
 @app.post("/tools/suggest-slot")

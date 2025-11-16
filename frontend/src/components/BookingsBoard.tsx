@@ -5,6 +5,8 @@ type Props = {
   bookings: Booking[];
   loading?: boolean;
   onRefresh: () => void;
+  onCancel?: (bookingId: number) => void;
+  cancellingId?: number | null;
 };
 
 type BookingGroup = {
@@ -13,7 +15,7 @@ type BookingGroup = {
   items: Booking[];
 };
 
-export function BookingsBoard({ bookings, loading = false, onRefresh }: Props) {
+export function BookingsBoard({ bookings, loading = false, onRefresh, onCancel, cancellingId }: Props) {
   const grouped = useMemo<BookingGroup[]>(() => {
     const map = new Map<string, Booking[]>();
     bookings.forEach((booking) => {
@@ -88,6 +90,16 @@ export function BookingsBoard({ bookings, loading = false, onRefresh }: Props) {
                       <strong>Atenção</strong>
                       <pre>{JSON.stringify(booking.warnings, null, 2)}</pre>
                     </div>
+                  )}
+                  {onCancel && (
+                    <button
+                      type="button"
+                      className="pill-button ghost"
+                      onClick={() => onCancel(booking.booking_id)}
+                      disabled={cancellingId === booking.booking_id}
+                    >
+                      {cancellingId === booking.booking_id ? "Cancelando..." : "Desmarcar consulta"}
+                    </button>
                   )}
                 </article>
               ))}

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { fetchAvailability, fetchBookings, fetchHistory, streamMessage, transcribeAudioFile } from "./api";
+import { cancelBooking, fetchAvailability, fetchBookings, fetchHistory, streamMessage, transcribeAudioFile } from "./api";
 import { AudioRecorderButton, type RecordedAudio } from "./components/AudioRecorderButton";
 import { AvailabilityBoard } from "./components/AvailabilityBoard";
 import { BookingsBoard } from "./components/BookingsBoard";
@@ -25,6 +25,7 @@ function App() {
   const [bookingsVisible, setBookingsVisible] = useState(false);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [bookingsLoading, setBookingsLoading] = useState(false);
+  const [cancellingBookingId, setCancellingBookingId] = useState<number | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [showProfileModal, setShowProfileModal] = useState(false);
 
@@ -218,6 +219,26 @@ function App() {
     }
   };
 
+  const handleCancelBooking = useCallback(
+    async (bookingId: number) => {
+      if (!window.confirm("Deseja realmente cancelar este agendamento?")) {
+        return;
+      }
+      setCancellingBookingId(bookingId);
+      setError(null);
+      try {
+        await cancelBooking(bookingId);
+        await loadBookings();
+      } catch (err) {
+        console.error(err);
+        setError("Nao foi possivel cancelar o agendamento.");
+      } finally {
+        setCancellingBookingId(null);
+      }
+    },
+    [loadBookings],
+  );
+
   return (
     <div className="app-shell">
       <VLibrasWidget />
@@ -357,7 +378,13 @@ function App() {
                 ×
               </button>
             </header>
-            <BookingsBoard bookings={bookings} loading={bookingsLoading} onRefresh={loadBookings} />
+            <BookingsBoard
+              bookings={bookings}
+              loading={bookingsLoading}
+              onRefresh={loadBookings}
+              onCancel={handleCancelBooking}
+              cancellingId={cancellingBookingId}
+            />
           </div>
         </div>
       )}
